@@ -11,6 +11,7 @@ use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Output\StreamOutput;
 use JMose\CommandSchedulerBundle\Entity\ScheduledCommand;
+use Symfony\Component\Process\Process;
 
 /**
  * Class ExecuteCommand : This class is the entry point to execute all scheduled command
@@ -217,7 +218,15 @@ class ExecuteCommand extends ContainerAwareCommand
                 '<info>Execute</info> : <comment>'.$scheduledCommand->getCommand()
                 .' '.$scheduledCommand->getArguments().'</comment>'
             );
-            $result = $command->run($input, $logOutput);
+
+            $process=new Process(getEnv('PATH_BIN_PHP')." ".getEnv('PATH_BIN_CONSOLE')." ".$input);
+            $process->setTimeout(300);
+
+            $process->start();
+            $process->wait();
+            $result=$process->getExitCode();
+
+            $logOutput->writeln($process->getOutput());
         } catch (\Exception $e) {
             $logOutput->writeln($e->getMessage());
             $logOutput->writeln($e->getTraceAsString());
