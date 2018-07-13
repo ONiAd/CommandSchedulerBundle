@@ -210,6 +210,7 @@ class ExecuteCommand extends ContainerAwareCommand
                     false
                 ), $this->commandsVerbosity
             );
+            $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": START ".$scheduledCommand->getId());
         }
 
         // Execute command and get return code
@@ -227,7 +228,9 @@ class ExecuteCommand extends ContainerAwareCommand
             $result=$process->getExitCode();
 
             $logOutput->writeln($process->getOutput());
+            $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": END ".$scheduledCommand->getId());
         } catch (\Exception $e) {
+            $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": ERROR ".$scheduledCommand->getId());
             $logOutput->writeln($e->getMessage());
             $logOutput->writeln($e->getTraceAsString());
             $result = -1;
