@@ -13,6 +13,9 @@ use Symfony\Component\Console\Output\StreamOutput;
 use JMose\CommandSchedulerBundle\Entity\ScheduledCommand;
 use Symfony\Component\Process\Process;
 
+use Psr\Log\LoggerInterface;
+
+
 /**
  * Class ExecuteCommand : This class is the entry point to execute all scheduled command
  *
@@ -219,13 +222,20 @@ class ExecuteCommand extends ContainerAwareCommand
                 '<info>Execute</info> : <comment>'.$scheduledCommand->getCommand()
                 .' '.$scheduledCommand->getArguments().'</comment>'
             );
+            $exec= $this->getContainer()->getParameter('path_php_bin')." ".$this->getContainer()->getParameter('path_bin_console')." ".$input;
+            //$exec =  "/opt/plesk/php/7.2/bin/php /var/www/vhosts/oniad.com/platform.oniad.com/bin/console $input";
 
-            $process=new Process(getEnv('PATH_BIN_PHP')." ".getEnv('PATH_BIN_CONSOLE')." ".$input);
+            $output->writeLn($exec);
+            $process=new Process($exec);
             $process->setTimeout(300);
 
             $process->start();
             $process->wait();
             $result=$process->getExitCode();
+
+            if ($result==127)
+                throw new \Exception("ERROR $exec ".$process->getErrorOutput());
+
 
             $logOutput->writeln($process->getOutput());
             $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": END ".$scheduledCommand->getId());
