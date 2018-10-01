@@ -152,6 +152,9 @@ class ExecuteCommand extends ContainerAwareCommand
      */
     private function executeCommand(ScheduledCommand $scheduledCommand, OutputInterface $output, InputInterface $input)
     {
+        /** @var $logger LoggerInterface */
+        $logger = $this->getContainer()->has('monolog.logger.cron') ? $this->getContainer()->get('monolog.logger.cron'):$this->getContainer()->get('monolog.logger');
+
         //reload command from database before every execution to avoid parallel execution
         $this->em->getConnection()->beginTransaction();
         try {
@@ -233,29 +236,35 @@ class ExecuteCommand extends ContainerAwareCommand
             $process->wait();
             $result=$process->getExitCode();
 
-            if ($result==127)
-                throw new \Exception("ERROR $exec ".$process->getErrorOutput());
-
-
             $logOutput->writeln($process->getOutput());
             $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": END ".$scheduledCommand->getId());
+
+            if ($result>=127)
+                throw new \Exception("ERROR $exec ".$process->getErrorOutput());
+
         } catch (\Exception $e) {
             $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": ERROR ".$scheduledCommand->getId());
             $logOutput->writeln($e->getMessage());
             $logOutput->writeln($e->getTraceAsString());
             $result = -1;
+            $logger->critical('Command throwed error',['exception'=>$e,'command_id'=>$scheduledCommand->getId()]);
         }
 
-        if (false === $this->em->isOpen()) {
-            $output->writeln('<comment>Entity manager closed by the last command.</comment>');
-            $this->em = $this->em->create($this->em->getConnection(), $this->em->getConfiguration());
-        }
 
-        $scheduledCommand = $this->em->merge($scheduledCommand);
-        $scheduledCommand->setLastReturnCode($result);
-        $scheduledCommand->setLocked(false);
-        $scheduledCommand->setExecuteImmediately(false);
-        $this->em->flush();
+
+        try {
+            if (false === $this->em->isOpen()) {
+                $output->writeln('<comment>Entity manager closed by the last command.</comment>');
+                $this->em = $this->em->create($this->em->getConnection(), $this->em->getConfiguration());
+            }
+            $scheduledCommand = $this->em->merge($scheduledCommand);
+            $scheduledCommand->setLastReturnCode($result);
+            $scheduledCommand->setLocked(false);
+            $scheduledCommand->setExecuteImmediately(false);
+            $this->em->flush();
+        } catch (\Exception $e) {
+            $logger->critical('Cannot unlock command');
+        }
 
         /*
          * This clear() is necessary to avoid conflict between commands and to be sure that none entity are managed
