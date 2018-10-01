@@ -55,6 +55,7 @@ class ExecuteCommand extends ContainerAwareCommand
             ->setDescription('Execute scheduled commands')
             ->addOption('dump', null, InputOption::VALUE_NONE, 'Display next execution')
             ->addOption('no-output', null, InputOption::VALUE_NONE, 'Disable output message from scheduler')
+            ->addOption('timeout','t',InputOption::VALUE_OPTIONAL,'Timeout (300)')
             ->setHelp('This class is the entry point to execute all scheduled command');
     }
 
@@ -155,6 +156,8 @@ class ExecuteCommand extends ContainerAwareCommand
         /** @var $logger LoggerInterface */
         $logger = $this->getContainer()->has('monolog.logger.cron') ? $this->getContainer()->get('monolog.logger.cron'):$this->getContainer()->get('monolog.logger');
 
+        $timeout = $input->getOption('timeout') ?? 300;
+
         //reload command from database before every execution to avoid parallel execution
         $this->em->getConnection()->beginTransaction();
         try {
@@ -230,7 +233,7 @@ class ExecuteCommand extends ContainerAwareCommand
 
             $output->writeLn($exec);
             $process=new Process($exec);
-            $process->setTimeout(300);
+            $process->setTimeout($timeout);
 
             $process->start();
             $process->wait();
