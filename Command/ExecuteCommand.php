@@ -250,7 +250,7 @@ class ExecuteCommand extends ContainerAwareCommand
             $logOutput->writeln($e->getMessage());
             $logOutput->writeln($e->getTraceAsString());
             $result = -1;
-            $logger->critical('Command throwed error',['exception'=>$e,'command_id'=>$scheduledCommand->getId()]);
+            $logger->critical($e->getMessage(),['exception'=>$e,'command_id'=>$scheduledCommand->getId()]);
         }
 
 
