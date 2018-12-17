@@ -56,6 +56,7 @@ class ExecuteCommand extends ContainerAwareCommand
             ->addOption('dump', null, InputOption::VALUE_NONE, 'Display next execution')
             ->addOption('no-output', null, InputOption::VALUE_NONE, 'Disable output message from scheduler')
             ->addOption('timeout','t',InputOption::VALUE_OPTIONAL,'Timeout (300)')
+            ->addOption('unlock','u',InputOption::VALUE_OPTIONAL,'Unlock after seconds')
             ->setHelp('This class is the entry point to execute all scheduled command');
     }
 
@@ -94,6 +95,11 @@ class ExecuteCommand extends ContainerAwareCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        if ($unlock = $input->getOption('unlock')) {
+            $output->writeln("Unlocking after $unlock");
+            $this->unlockAll($unlock);
+        }
+
         $output->writeln('<info>Start : '.($this->dumpMode ? 'Dump' : 'Execute').' all scheduled command</info>');
 
         // Before continue, we check that the output file is valid and writable (except for gaufrette)
@@ -264,6 +270,7 @@ class ExecuteCommand extends ContainerAwareCommand
             $scheduledCommand->setLastReturnCode($result);
             $scheduledCommand->setLocked(false);
             $scheduledCommand->setExecuteImmediately(false);
+            $this->em->persist($scheduledCommand);
             $this->em->flush();
         } catch (\Exception $e) {
             $logger->critical('Cannot unlock command');
@@ -278,4 +285,16 @@ class ExecuteCommand extends ContainerAwareCommand
         unset($command);
         gc_collect_cycles();
     }
+
+    protected function unlockAll($seconds){
+        $tableName = $this->em->getClassMetadata(ScheduledCommand::class)->getTableName();
+
+        $this->em->getConnection()->executeQuery(<<<SQL
+            UPDATE ${tableName} SET locked = 0 
+            WHERE locked = 1 
+            AND TIME_TO_SEC(TIMEDIFF(NOW(), last_execution)) > :seconds
+SQL
+        ,['seconds'=>$seconds]);
+    }
+
 }
