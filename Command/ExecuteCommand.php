@@ -2,18 +2,20 @@
 
 namespace JMose\CommandSchedulerBundle\Command;
 
+use AppBundle\Processors\LogEnvProcessor;
 use Cron\CronExpression;
+use JMose\CommandSchedulerBundle\Entity\ScheduledCommand;
+use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\StreamHandler;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
-use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Output\StreamOutput;
-use JMose\CommandSchedulerBundle\Entity\ScheduledCommand;
 use Symfony\Component\Process\Process;
-
-use Psr\Log\LoggerInterface;
 
 
 /**
@@ -156,6 +158,7 @@ class ExecuteCommand extends ContainerAwareCommand
      * @param ScheduledCommand $scheduledCommand
      * @param OutputInterface $output
      * @param InputInterface $input
+     * @throws \Exception
      */
     private function executeCommand(ScheduledCommand $scheduledCommand, OutputInterface $output, InputInterface $input)
     {
@@ -225,36 +228,58 @@ class ExecuteCommand extends ContainerAwareCommand
                     false
                 ), $this->commandsVerbosity
             );
-            $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": START ".$scheduledCommand->getId());
+
         }
+
+        $_ENV['JOB_ID']=$scheduledCommand->getId()."-".uniqid();
+
+        $handler=new StreamHandler($logOutput->getStream());
+        $handler->setFormatter(new JsonFormatter());
+        $handler->pushProcessor(function($record){
+            $record['extra']['JOB_ID']=$_ENV['JOB_ID'];
+            return $record;
+        });
+        $logger->pushHandler($handler);
+
+
 
         // Execute command and get return code
         try {
+
+            $logger->debug('Start command #'.$scheduledCommand->getId());
+
             $output->writeln(
                 '<info>Execute</info> : <comment>'.$scheduledCommand->getCommand()
                 .' '.$scheduledCommand->getArguments().'</comment>'
             );
             $exec= $this->getContainer()->getParameter('path_php_bin')." ".$this->getContainer()->getParameter('path_bin_console')." ".$input;
-            //$exec =  "/opt/plesk/php/7.2/bin/php /var/www/vhosts/oniad.com/platform.oniad.com/bin/console $input";
 
             $output->writeLn($exec);
             $process=new Process($exec);
+            $process->setEnv($_ENV);
             $process->setTimeout($timeout);
 
             $process->start();
+
+            foreach ($process as $type => $data) {
+                if ($process::OUT === $type)
+                    $logOutput->write($data);
+
+            }
+
             $process->wait();
             $result=$process->getExitCode();
+            $logOutput->write($process->getOutput());
 
-            $logOutput->writeln($process->getOutput());
-            $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": END ".$scheduledCommand->getId());
+            $logger->debug($process->getErrorOutput());
+
+            $logger->debug('End command #'.$scheduledCommand->getId());
 
             if ($result>=127)
                 throw new \Exception("ERROR $exec ".$process->getErrorOutput());
 
         } catch (\Exception $e) {
-            $logOutput->writeln(date('[Y-m-d H:i:s]')." ".__CLASS__.": ERROR ".$scheduledCommand->getId());
-            $logOutput->writeln($e->getMessage());
-            $logOutput->writeln($e->getTraceAsString());
+            $logger->error('Error command #'.$scheduledCommand->getId()." ".$e->getMessage(), ['exception'=>$e]);
             $result = -1;
             $logger->critical($e->getMessage(),['exception'=>$e,'command_id'=>$scheduledCommand->getId()]);
         }
