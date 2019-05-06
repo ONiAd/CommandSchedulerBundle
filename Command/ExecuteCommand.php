@@ -15,6 +15,7 @@ use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Output\StreamOutput;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 
@@ -231,31 +232,32 @@ class ExecuteCommand extends ContainerAwareCommand
 
         }
 
-        $_ENV['JOB_ID']=$scheduledCommand->getId()."-".uniqid();
+        if (method_exists($logOutput,'getStream')){
+            $_ENV['JOB_ID']=$scheduledCommand->getId()."-".uniqid();
 
-        $handler=new StreamHandler($logOutput->getStream());
-        $handler->setFormatter(new JsonFormatter());
-        $handler->pushProcessor(function($record){
-            $record['extra']['JOB_ID']=$_ENV['JOB_ID'];
-            return $record;
-        });
-        $logger->pushHandler($handler);
-
+            $handler=new StreamHandler($logOutput->getStream());
+            $handler->setFormatter(new JsonFormatter());
+            $handler->pushProcessor(function($record){
+                $record['extra']['JOB_ID']=$_ENV['JOB_ID'];
+                return $record;
+            });
+            $logger->pushHandler($handler);
+        }
 
 
         // Execute command and get return code
         try {
 
-            $logger->debug('Start command #'.$scheduledCommand->getId());
+            $logger->debug('Start command #' . $scheduledCommand->getId());
 
             $output->writeln(
-                '<info>Execute</info> : <comment>'.$scheduledCommand->getCommand()
-                .' '.$scheduledCommand->getArguments().'</comment>'
+                '<info>Execute</info> : <comment>' . $scheduledCommand->getCommand()
+                . ' ' . $scheduledCommand->getArguments() . '</comment>'
             );
-            $exec= $this->getContainer()->getParameter('path_php_bin')." ".$this->getContainer()->getParameter('path_bin_console')." ".$input;
+            $exec = $this->getContainer()->getParameter('path_php_bin') . " " . $this->getContainer()->getParameter('path_bin_console') . " " . $input;
 
             $output->writeLn($exec);
-            $process=new Process($exec);
+            $process = new Process($exec);
             $process->setEnv($_ENV);
             $process->setTimeout($timeout);
 
@@ -268,16 +270,19 @@ class ExecuteCommand extends ContainerAwareCommand
             }
 
             $process->wait();
-            $result=$process->getExitCode();
+            $result = $process->getExitCode();
             $logOutput->write($process->getOutput());
 
             $logger->debug($process->getErrorOutput());
 
-            $logger->debug('End command #'.$scheduledCommand->getId());
+            $logger->debug('End command #' . $scheduledCommand->getId());
 
-            if ($result>=127)
-                throw new \Exception("ERROR $exec ".$process->getErrorOutput());
-
+            if ($result >= 127)
+                throw new \Exception("ERROR $exec " . $process->getErrorOutput());
+            
+        } catch (ProcessTimedOutException $e){
+            $logger->error('Error command #'.$scheduledCommand->getId()." ".$e->getMessage(), ['exception'=>$e]);
+            $result = -1;
         } catch (\Exception $e) {
             $logger->error('Error command #'.$scheduledCommand->getId()." ".$e->getMessage(), ['exception'=>$e]);
             $result = -1;
